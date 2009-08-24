@@ -23,6 +23,10 @@ module Sunspot
         params = {}
         if @keywords
           params[:q] = @keywords
+          if @keywords.match(/\*\Z/)
+            params['q.alt'] = @keywords
+            params.delete(:q)
+          end          
           params[:fl] = '* score'
           params[:fq] = types_phrase
           params[:qf] = text_field_names.join(' ')

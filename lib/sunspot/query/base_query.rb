@@ -23,7 +23,7 @@ module Sunspot
         params = {}
         if @keywords
           params[:q] = @keywords
-          if @keywords.match(/\*\Z/)
+          if @keywords.match(/\*\)?\Z/)
             params['q.alt'] = @keywords
             params.delete(:q)
           end          

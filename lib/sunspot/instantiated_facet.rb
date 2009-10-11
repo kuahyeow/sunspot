@@ -4,6 +4,9 @@ module Sunspot
   # primary key stored in facet rows' values. The rows are hydrated lazily, but
   # all rows are hydrated the first time #instance is called on any of the rows.
   #
+  # Instatiated facets are possible for fields which are defined with a
+  # :references option.
+  #
   # The #rows method returns InstantiatedFacetRow objects.
   #
   class InstantiatedFacet < Facet
@@ -15,7 +18,7 @@ module Sunspot
     #
     def populate_instances! #:nodoc:
       ids = rows.map { |row| row.value }
-      reference_class = Sunspot::Util.full_const_get(@field.reference.to_s)
+      reference_class = Sunspot::Util.full_const_get(@facet_data.reference.to_s)
       accessor = Adapters::DataAccessor.create(reference_class)
       instance_map = accessor.load_all(ids).inject({}) do |map, instance|
         map[Adapters::InstanceAdapter.adapt(instance).id] = instance
@@ -26,13 +29,11 @@ module Sunspot
       end
     end
 
-    private
-
     # 
-    # Override the Facet#new_row method to return an InstantiateFacetRow
+    # A collection of InstantiatedFacetRow objects
     #
-    def new_row(pair)
-      InstantiatedFacetRow.new(pair, self)
+    def rows
+      @facet_data.rows { |value, count| InstantiatedFacetRow.new(value, count, self) }
     end
   end
 end

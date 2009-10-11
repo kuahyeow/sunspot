@@ -15,7 +15,7 @@ module Sunspot
       # For testing purposes
       #
       def connection_class #:nodoc:
-        @connection_class ||= RSolr::Connection
+        @connection_class ||= RSolr
       end
     end
 
@@ -29,10 +29,11 @@ module Sunspot
     # connection. Usually you will want to stick with the default arguments
     # when instantiating your own sessions.
     #
-    def initialize(config = Configuration.build, connection = nil)
+    def initialize(config = Configuration.build, connection = nil, master_connection = nil)
       @config = config
       yield(@config) if block_given?
       @connection = connection
+      @master_connection = master_connection
       @updates = 0
     end
 
@@ -41,23 +42,24 @@ module Sunspot
     #
     def new_search(*types)
       types.flatten!
+      if types.empty?
+        raise(ArgumentError, "You must specify at least one type to search")
+      end
       setup =
         if types.length == 1
           Setup.for(types.first)
         else
           CompositeSetup.for(types)
           end
-      Search.new(connection, setup, Query::Query.new(types, setup, @config))
+      Search.new(connection, setup, Query::Query.new(types), @config)
     end
 
     #
     # See Sunspot.search
     #
     def search(*types, &block)
-      options = types.last.is_a?(Hash) ? types.pop : {}
       search = new_search(*types)
       search.build(&block) if block
-      search.query.options = options
       search.execute!
     end
 
@@ -83,7 +85,7 @@ module Sunspot
     #
     def commit
       @updates = 0
-      connection.commit
+      master_connection.commit
     end
 
     # 
@@ -133,7 +135,7 @@ module Sunspot
       classes.flatten!
       if classes.empty?
         @updates += 1
-        Indexer.remove_all(connection)
+        Indexer.remove_all(master_connection)
       else
         @updates += classes.length
         for clazz in classes
@@ -186,16 +188,43 @@ module Sunspot
     def connection
       @connection ||=
         begin
-          connection = self.class.connection_class.new(
-            RSolr::Adapter::HTTP.new(:url => config.solr.url)
+          connection = self.class.connection_class.connect(
+            :url => config.solr.url,
+            :adapter => config.http_client
           )
-          connection.adapter.connector.adapter_name = config.http_client
+          connection.message.adapter =
+            RSolr::Message::Adapter.const_get(
+              Util.camel_case(config.xml_builder.to_s)
+            ).new
           connection
         end
     end
 
+    # 
+    # Retrieve the Solr connection to the master for this session, creating one
+    # if it does not already exist.
+    #
+    # ==== Returns
+    #
+    # Solr::Connection:: The connection for this session
+    #
+    def master_connection
+      @master_connection ||=
+        begin
+          if config.master_solr.url && config.master_solr.url != config.solr.url
+            master_connection = self.class.connection_class.new(
+              RSolr::Adapter::HTTP.new(:url => config.master_solr.url)
+            )
+            master_connection.adapter.connector.adapter_name = config.http_client
+            master_connection
+          else
+            connection
+          end
+        end
+    end
+
     def indexer
-      @indexer ||= Indexer.new(connection)
+      @indexer ||= Indexer.new(master_connection)
     end
   end
 end

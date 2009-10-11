@@ -1,4 +1,6 @@
-require File.join(File.dirname(__FILE__), 'search', 'hit')
+%w(hit highlight).each do |file|
+  require File.join(File.dirname(__FILE__), 'search', file)
+end
 
 module Sunspot
   # 
@@ -14,8 +16,9 @@ module Sunspot
     # in this case.
     attr_reader :query 
 
-    def initialize(connection, setup, query) #:nodoc:
+    def initialize(connection, setup, query, configuration) #:nodoc:
       @connection, @setup, @query = connection, setup, query
+      @query.paginate(1, configuration.pagination.default_per_page)
     end
 
     #
@@ -25,11 +28,13 @@ module Sunspot
     # Sunspot#new_search(), you will need to call this method after building the
     # query.
     #
-    def execute!
+    def execute
+      reset
       params = @query.to_params
       @solr_result = @connection.select(params)
       self
     end
+    alias_method :execute!, :execute #:nodoc: deprecated
 
     # 
     # Get the collection of results as instantiated objects. If WillPaginate is
@@ -60,7 +65,7 @@ module Sunspot
     # Array:: Ordered collection of Hit objects
     #
     def hits
-      @hits ||= solr_response['docs'].map { |doc| Hit.new(doc, self) }
+      @hits ||= solr_response['docs'].map { |doc| Hit.new(doc, highlights_for(doc), self) }
     end
     alias_method :raw_results, :hits
 
@@ -76,29 +81,21 @@ module Sunspot
     end
 
     # 
-    # Get the facet object for the given field. This field will need to have
-    # been requested as a field facet inside the search block.
+    # Get the facet object for the given name. `name` can either be the name
+    # given to a query facet, or the field name of a field facet. Returns a
+    # Sunspot::Facet object.
     #
-    # ==== Parameters
-    #
-    # field_name<Symbol>:: field name for which to get the facet
-    #
-    # ==== Returns
-    #
-    # Sunspot::Facet:: Facet object for the given field
-    #
-    def facet(field_name)
-      (@facets_cache ||= {})[field_name.to_sym] ||=
+    def facet(name)
+      (@facets_cache ||= {})[name.to_sym] ||=
         begin
-          query_facet(field_name) ||
+          facet_data = query_facet_data(name) ||
             begin
-              field = field(field_name)
-              date_facet(field) ||
-                begin
-                  facet_class = field.reference ? InstantiatedFacet : Facet
-                  facet_class.new(@solr_result['facet_counts']['facet_fields'][field.indexed_name], field)
-                end
+              field = field(name)
+              date_facet_data(field) ||
+                FacetData::FieldFacetData.new(@solr_result['facet_counts']['facet_fields'][field.indexed_name], field)
             end
+          facet_class = facet_data.reference ? InstantiatedFacet : Facet
+          facet_class.new(facet_data)
         end
     end
 
@@ -132,7 +129,7 @@ module Sunspot
       (@dynamic_facets_cache ||= {})[[base_name.to_sym, dynamic_name.to_sym]] ||=
         begin
           field = @setup.dynamic_field_factory(base_name).build(dynamic_name)
-          Facet.new(@solr_result['facet_counts']['facet_fields'][field.indexed_name], field)
+          Facet.new(FacetData::FieldFacetData.new(@solr_result['facet_counts']['facet_fields'][field.indexed_name], field))
         end
     end
 
@@ -145,19 +142,34 @@ module Sunspot
     # Sunspot::DSL::Search#data_accessor_for method when building searches using
     # the block DSL.
     #
-    def data_accessor_for(clazz)
+    def data_accessor_for(clazz) #:nodoc:
       (@data_accessors ||= {})[clazz.name.to_sym] ||=
         Adapters::DataAccessor.create(clazz)
     end
 
     # 
-    # Build this search using a DSL block.
+    # Build this search using a DSL block. This method can be called more than
+    # once on an unexecuted search (e.g., Sunspot.new_search) in order to build
+    # a search incrementally.
     #
-    def build(&block) #:nodoc:
+    # === Example
+    #
+    #   search = Sunspot.new_search(Post)
+    #   search.build do
+    #     with(:published_at).less_than Time.now
+    #   end
+    #   search.execute!
+    #
+    def build(&block)
       Util.instance_eval_or_call(dsl, &block)
       self
     end
 
+    # 
+    # Populate the Hit objects with their instances. This is invoked the first
+    # time any hit has its instance requested, and all hits are loaded as a
+    # batch.
+    #
     def populate_hits! #:nodoc:
       id_hit_hash = Hash.new { |h, k| h[k] = {} }
       hits.each do |hit|
@@ -172,49 +184,55 @@ module Sunspot
       end
     end
 
+    def inspect #:nodoc:
+      "<Sunspot::Search:#{query.to_params.inspect}>"
+    end
+
     private
 
     def solr_response
       @solr_response ||= @solr_result['response']
     end
 
-    def doc_ids
-      @doc_ids ||= solr_response['docs'].map { |doc| doc['id'] }
-    end
-
     def dsl
-      DSL::Search.new(self)
+      DSL::Search.new(self, @setup)
     end
 
-    def raw_facet(field)
-      if field.type == Type::TimeType
-        @solr_result['facet_counts']['facet_dates'][field.indexed_name]
-      end || @solr_result['facet_counts']['facet_fields'][field.indexed_name]
-    end
-
-    def date_facet(field)
+    def date_facet_data(field)
       if field.type == Type::TimeType
         if @solr_result['facet_counts'].has_key?('facet_dates')
           if facet_result = @solr_result['facet_counts']['facet_dates'][field.indexed_name]
-            DateFacet.new(facet_result, field)
+            FacetData::DateFacetData.new(facet_result, field)
           end
         end
       end
     end
 
-    def query_facet(name)
+    def query_facet_data(name)
       if query_facet = @query.query_facet(name.to_sym)
         if @solr_result['facet_counts'].has_key?('facet_queries')
-          QueryFacet.new(
-            query_facet,
-            @solr_result['facet_counts']['facet_queries']
-          )
+            FacetData::QueryFacetData.new(
+              query_facet,
+              @solr_result['facet_counts']['facet_queries']
+            )
         end
+      end
+    end
+
+    def highlights_for(doc)
+      if @solr_result['highlighting']
+        @solr_result['highlighting'][doc['id']]
       end
     end
 
     def field(name)
       @setup.field(name)
+    end
+    
+    # Clear out all the cached ivars so the search can be called again.
+    def reset
+      @results = @hits = @total = @facets_cache = 
+        @dynamic_facets_cache = @solr_response = @doc_ids = nil
     end
   end
 end

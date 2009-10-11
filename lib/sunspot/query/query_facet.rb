@@ -12,12 +12,13 @@ module Sunspot
     # query facet rows, instead returning each requested row individually, keyed
     # by the boolean phrase used in the facet query.
     #
-    class QueryFacet
+    class QueryFacet #:nodoc:
       attr_reader :name #:nodoc:
+      attr_reader :field #:nodoc:
+      attr_reader :options #:nodoc:
 
-      def initialize(name, setup) #:nodoc:
-        @name = name
-        @setup = setup
+      def initialize(name, options, setup = nil) #:nodoc:
+        @name, @options, @setup = name, options, setup
         @components = []
       end
 
@@ -50,11 +51,16 @@ module Sunspot
       #
       def to_params #:nodoc:
         components = @components.map { |component| component.to_boolean_phrase }
-        components = components.first if components.length == 1
-        {
-          :facet => 'true',
-          :"facet.query" => components
-        }
+        components.compact!
+        if components.empty?
+          {}
+        else
+          components = components.first if components.length == 1
+          {
+            :facet => 'true',
+            :"facet.query" => components
+          }
+        end
       end
 
       # 

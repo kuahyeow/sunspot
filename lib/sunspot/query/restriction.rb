@@ -11,9 +11,13 @@ module Sunspot
         # Array:: Collection of restriction class names
         #
         def names
-          constants - %w(Base SameAs) #XXX this seems ugly
+          constants - %w(Base) #XXX this seems ugly
         end
 
+        # 
+        # Convenience method to access a restriction class by an underscored
+        # symbol or string
+        #
         def [](restriction_name)
           @types ||= {}
           @types[restriction_name.to_sym] ||= const_get(Sunspot::Util.camel_case(restriction_name.to_s))
@@ -104,6 +108,10 @@ module Sunspot
           !!@negated
         end
 
+        # 
+        # Return a new restriction that is the negated version of this one. It
+        # is used by disjunction denormalization.
+        #
         def negate
           self.class.new(@field, @value, !@negated)
         end
@@ -123,7 +131,7 @@ module Sunspot
         # String:: Solr API representation of given value
         #
         def solr_value(value = @value)
-          escape(@field.to_indexed(value))
+          solr_value = escape(@field.to_indexed(value))
         end
       end
 
@@ -161,6 +169,12 @@ module Sunspot
       class LessThan < Base
         private
 
+        def solr_value(value = @value)
+          solr_value = super
+          solr_value = "\"#{solr_value}\"" if solr_value.index(' ')
+          solr_value
+        end
+
         def to_solr_conditional
           "[* TO #{solr_value}]"
         end
@@ -171,6 +185,12 @@ module Sunspot
       #
       class GreaterThan < Base
         private
+
+        def solr_value(value = @value)
+          solr_value = super
+          solr_value = "\"#{solr_value}\"" if solr_value.index(' ')
+          solr_value
+        end
 
         def to_solr_conditional
           "[#{solr_value} TO *]"
@@ -183,8 +203,15 @@ module Sunspot
       class Between < Base
         private
 
+        def solr_value(value = @value)
+          solr_value = super
+          solr_value = "\"#{solr_value}\"" if solr_value.index(' ')
+          solr_value
+        end
+
         def to_solr_conditional
-          "[#{solr_value(@value.first)} TO #{solr_value(@value.last)}]"
+          first, last = [@value.first, @value.last].sort
+          "[#{solr_value(first)} TO #{solr_value(last)}]"
         end
       end
 
@@ -212,20 +239,14 @@ module Sunspot
       end
 
       # 
-      # Result must be the exact instance given (only useful when negated).
+      # Results must have a field with a value that begins with the argument.
+      # Most useful for strings, but in theory will work with anything.
       #
-      class SameAs < Base
-        def initialize(object, negated = false)
-          @object, @negated = object, negated
-        end
+      class StartingWith < Base
+        private
 
-        def to_positive_boolean_phrase
-          adapter = Adapters::InstanceAdapter.adapt(@object)
-          "id:#{escape(adapter.index_id)}"
-        end
-
-        def negate
-          SameAs.new(@object, !negated?)
+        def to_solr_conditional
+          "#{solr_value(@value)}*"
         end
       end
     end

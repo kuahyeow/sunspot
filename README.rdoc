@@ -10,6 +10,11 @@ features for indexing objects and searching for them.
 Sunspot is designed to be easily plugged in to any ORM, or even non-database-backed
 objects such as the filesystem.
 
+This README is intended as a quick primer on what Sunspot is capable of; for
+detailed treatment of Sunspot's full feature range, check out the wiki:
+http://wiki.github.com/outoftime/sunspot
+
+
 === Features:
 
 * Define indexing strategy for each searchable class using intuitive block-based API
@@ -123,9 +128,7 @@ me so I can rectify the situation!
 
 1. RSolr
 2. Daemons
-3. OptiFlag
-4. Haml
-5. Java
+4. Java
 
 Sunspot has been tested with MRI 1.8.6 and 1.8.7, REE 1.8.6, YARV 1.9.1, and
 JRuby 1.2.0
@@ -134,6 +137,35 @@ JRuby 1.2.0
 
 Please submit bug reports to
 http://outoftime.lighthouseapp.com/projects/20339-sunspot
+
+== Contribution Guidelines
+
+Contributions are very welcome - both new features, enhancements, and bug fixes.
+Bug reports with a failing regression test are also lovely. In order to keep the
+contribution process as organized and smooth as possible, please follow these
+guidelines:
+
+* Contributions should be submitted via Sunspot's Lighthouse account, with an
+  attached git patch. See below for how to create a git patch.
+* Patches should not make any changes in your patch to the gemspec task other
+  than adding/removing dependencies (e.g., changing the name, version, email,
+  description, etc.)
+* Patches should not include any changes to the gemspec itself.
+* Document any new methods, options, arguments, etc.
+* Write tests.
+* As much as possible, follow the coding and testing styles you see in existing
+  code. One could accuse me of being nitpicky about this, but consistent code is
+  easier to read, maintain, and enhance.
+* Don't make any massive changes to the structure of library or test code. If
+  you think something needs a huge refactor or rearrangement, shoot me a
+  message; trying to apply that kind of patch without warning opens the door to
+  a world of conflict hurt.
+
+Here's how to create a Git patch - assuming you're pulling from the canonical
+Sunspot repository at `upstream`:
+
+  git fetch upstream
+  git format-patch upstre
 
 == Further Reading
 
@@ -148,6 +180,11 @@ http://outoftime.lighthouseapp.com/projects/20339-sunspot
 * Peer Allan (peer.allan@gmail.com)
 * Dmitriy Dzema (dima@dzema.name)
 * Benjamin Krause (bk@benjaminkrause.com)
+* Marcel de Graaf (marcel@slashdev.nl)
+* Brandon Keepers (brandon@opensoul.org)
+* Peter Berkenbosch (peterberkenbosch@me.com)
+* Brian Atkinson
+* Tom Coleman (tom@thesnail.org)
 
 == License
 

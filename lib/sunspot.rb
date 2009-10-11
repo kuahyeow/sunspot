@@ -9,10 +9,10 @@ end
 
 require File.join(File.dirname(__FILE__), 'light_config')
 
-%w(util adapters configuration setup composite_setup field field_factory
-   data_extractor indexer query search facet facet_row instantiated_facet
-   instantiated_facet_row date_facet date_facet_row query_facet query_facet_row
-   session type dsl).each do |filename|
+%w(util adapters configuration setup composite_setup text_field_setup field
+   field_factory data_extractor indexer query search facet facet_row
+   instantiated_facet instantiated_facet_row facet_data session type
+   dsl).each do |filename|
   require File.join(File.dirname(__FILE__), 'sunspot', filename)
 end
 
@@ -36,6 +36,7 @@ module Sunspot
   UnrecognizedRestrictionError = Class.new(Exception)
   NoAdapterError = Class.new(Exception)
   NoSetupError = Class.new(Exception)
+  IllegalSearchError = Class.new(Exception)
 
   class <<self
     # Configures indexing and search for a given class.
@@ -222,18 +223,6 @@ module Sunspot
     #   Zero, one, or more types to search for. If no types are passed, all
     #   configured types will be searched.
     #
-    # ==== Options (last argument, optional)
-    #
-    # :keywords<String>:: Fulltext search string
-    # :conditions<Hash>::
-    #   Hash of key-value pairs to be used as restrictions. Keys are field
-    #   names. Scalar values are used as equality restrictions; arrays are used
-    #   as "any of" restrictions; and Ranges are used as range restrictions.
-    # :order<String>:: order field and direction (e.g., 'updated_at desc')
-    # :page<Integer>:: Page to start on for pagination
-    # :per_page<Integer>::
-    #   Number of results to use per page. Ignored if :page is not specified.
-    #
     # ==== Returns
     #
     # Sunspot::Search:: Object containing results, facets, count, etc.
@@ -242,9 +231,10 @@ module Sunspot
     # the following criteria:
     #
     # * They are not of type +text+.
-    # * They are defined for all of the classes being searched
-    # * They have the same data type for all of the classes being searched
+    # * They are defined for at least one of the classes being searched
+    # * They have the same data type for all of the classes being searched.
     # * They have the same multiple flag for all of the classes being searched.
+    # * They have the same stored flag for all of the classes being searched.
     #
     # The restrictions available are the constants defined in the
     # Sunspot::Restriction class. The standard restrictions are:

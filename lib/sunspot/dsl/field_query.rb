@@ -6,6 +6,11 @@ module Sunspot
     # query DSL.
     #
     class FieldQuery < Scope
+      def initialize(query, setup)
+        @query = query
+        super(query.scope, setup)
+      end
+
       # Specify the order that results should be returned in. This method can
       # be called multiple times; precedence will be in the order given.
       #
@@ -15,15 +20,22 @@ module Sunspot
       # direction<Symbol>:: :asc or :desc (default :asc)
       #
       def order_by(field_name, direction = nil)
-        @query.order_by(field_name, direction)
+        sort =
+          if special = Sunspot::Query::Sort.special(field_name)
+            special.new(direction)
+          else
+            Sunspot::Query::Sort::FieldSort.new(
+              @setup.field(field_name), direction
+            )
+          end
+        @query.add_sort(sort)
       end
 
       # 
-      # Order results randomly. This will (generally) return the results in a
-      # different order each time a search is called.
+      # DEPRECATED Use <code>order_by(:random)</code>
       #
       def order_by_random
-        @query.order_by_random
+        order_by(:random)
       end
 
       # Request facets on the given field names. If the last argument is a hash,
@@ -49,6 +61,12 @@ module Sunspot
       #
       def facet(*field_names, &block)
         if block
+          options =
+            if field_names.last.is_a?(Hash)
+              field_names.pop
+            else
+              {}
+            end
           if field_names.length != 1
             raise(
               ArgumentError,
@@ -56,16 +74,25 @@ module Sunspot
             )
           end
           name = field_names.first
-          DSL::QueryFacet.new(@query.add_query_facet(name)).instance_eval(&block)
+          DSL::QueryFacet.new(@query.add_query_facet(name, options), @setup).instance_eval(&block)
         else
           options = 
             if field_names.last.is_a?(Hash)
               field_names.pop
+            else
+              {}
             end
           for field_name in field_names
-            @query.add_field_facet(field_name, options)
+            @query.add_field_facet(@setup.field(field_name), options)
           end
         end
+      end
+
+      def dynamic(base_name, &block)
+        Sunspot::Util.instance_eval_or_call(
+          FieldQuery.new(@query, @setup.dynamic_field_factory(base_name)),
+          &block
+        )
       end
     end
   end

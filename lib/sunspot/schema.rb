@@ -1,15 +1,4 @@
-using_rubygems = false
-begin
-  require 'haml'
-rescue LoadError => e
-  if using_rubygems
-    raise(e)
-  else
-    using_rubygems = true
-    require 'rubygems'
-    retry
-  end
-end
+require 'erb'
 
 module Sunspot
   # 
@@ -29,7 +18,9 @@ module Sunspot
       FieldType.new('sfloat', 'SortableFloat', 'f'),
       FieldType.new('date', 'Date', 'd'),
       FieldType.new('sint', 'SortableInt', 'i'),
-      FieldType.new('string', 'Str', 's')
+      FieldType.new('string', 'Str', 's'),
+      FieldType.new('sdouble', 'SortableDouble', 'e'),
+      FieldType.new('slong', 'SortableLong', 'l')
     ]
 
     FIELD_VARIANTS = [
@@ -89,20 +80,11 @@ module Sunspot
     end
 
     # 
-    # Return an XML representation of this schema using the Haml template
+    # Return an XML representation of this schema using the ERB template
     #
     def to_xml
-      template = File.read(
-        File.join(
-          File.dirname(__FILE__),
-          '..',
-          '..',
-          'templates',
-          'schema.xml.haml'
-        )
-      )
-      engine = Haml::Engine.new(template)
-      engine.render(Object.new, :schema => self)
+      template = File.join(File.dirname(__FILE__), '..', '..', 'templates', 'schema.xml.erb')
+      ERB.new(File.read(template), nil, '-').result(binding)
     end
 
     private

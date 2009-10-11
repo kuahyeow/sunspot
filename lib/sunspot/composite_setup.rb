@@ -48,7 +48,7 @@ module Sunspot
     # UnrecognizedFieldError::
     #   If no field with that name is configured for any of the enclosed types.
     #
-    def text_field(field_name)
+    def text_fields(field_name)
       text_fields_hash[field_name.to_sym] || raise(
         UnrecognizedFieldError,
         "No text field configured for #{@types * ', '} with name '#{field_name}'"
@@ -104,8 +104,8 @@ module Sunspot
     #
     # Array:: Text fields configured for the enclosed types
     #
-    def text_fields
-      @text_fields ||= text_fields_hash.values
+    def all_text_fields
+      @text_fields ||= text_fields_hash.values.map { |set| set.to_a }.flatten
     end
 
     private
@@ -121,8 +121,8 @@ module Sunspot
     def text_fields_hash
       @text_fields_hash ||=
         setups.inject({}) do |hash, setup|
-          setup.text_fields.each do |text_field|
-            hash[text_field.name] ||= text_field
+          setup.all_text_fields.each do |text_field|
+            (hash[text_field.name] ||= Set.new) << text_field
           end
           hash
         end
@@ -141,21 +141,19 @@ module Sunspot
     def fields_hash
       @fields_hash ||=
         begin
-          fields_hash = @types.inject({}) do |hash, type|
+          field_sets_hash = Hash.new { |h, k| h[k] = Set.new }
+          @types.each do |type|
             Setup.for(type).fields.each do |field|
-              (hash[field.name.to_sym] ||= {})[type.name] = field
-            end
-            hash
-          end
-          fields_hash.each_pair do |field_name, field_configurations_hash|
-            if @types.any? { |type| field_configurations_hash[type.name].nil? } # at least one type doesn't have this field configured
-              fields_hash.delete(field_name)
-            elsif field_configurations_hash.values.map { |configuration| configuration.indexed_name }.uniq.length != 1 # fields with this name have different configs
-              fields_hash.delete(field_name)
-            else
-              fields_hash[field_name] = field_configurations_hash.values.first
+              field_sets_hash[field.name.to_sym] << field
             end
           end
+          fields_hash = {}
+          field_sets_hash.each_pair do |field_name, set|
+            if set.length == 1
+              fields_hash[field_name] = set.to_a.first
+            end
+          end
+          fields_hash
         end
     end
 

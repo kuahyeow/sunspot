@@ -1,55 +1,110 @@
 module Sunspot
   module Query
-    module Connective #:nodoc:
+    module Connective #:nodoc:all
       # 
       # Base class for connectives (conjunctions and disjunctions).
       #
-      class Abstract < Scope
-        def initialize(setup, negated = false) #:nodoc:
-          @setup, @negated = setup, negated
+      class Abstract
+        def initialize(negated = false) #:nodoc:
+          @negated = negated
           @components = []
         end
 
         # 
-        # Connective as solr params.
+        # Add a restriction to the connective.
         #
-        def to_params #:nodoc:
-          { :fq => to_boolean_phrase }
+        def add_restriction(field, restriction_type, value, negated = false)
+          @components << restriction_type.new(field, value, negated)
+        end
+
+        # 
+        # Add a shorthand restriction; the restriction type is determined by
+        # the value.
+        #
+        def add_shorthand_restriction(field, value, negated = false)
+          restriction_type =
+            case value
+            when Array then Restriction::AnyOf
+            when Range then Restriction::Between
+            else Restriction::EqualTo
+            end
+          add_restriction(field, restriction_type, value, negated)
+        end
+
+        # 
+        # Add a negated restriction. The added restriction will match all
+        # documents who do not match the terms of the restriction.
+        #
+        def add_negated_restriction(field, restriction_type, value)
+          add_restriction(field, restriction_type, value, true)
+        end
+
+        # 
+        # Add a negated shorthand restriction (see add_shorthand_restriction)
+        #
+        def add_negated_shorthand_restriction(field, value)
+          add_shorthand_restriction(field, value, true)
+        end
+
+        # 
+        # Add a new conjunction and return it.
+        #
+        def add_conjunction
+          add_component(Conjunction.new)
+        end
+
+        # 
+        # Add a new disjunction and return it.
+        #
+        def add_disjunction
+          add_component(Disjunction.new)
+        end
+
+        # 
+        # Add an arbitrary component to the conjunction, and return it.
+        # The component must respond to #to_boolean_phrase
+        #
+        def add_component(component)
+          @components << component
+          component
         end
 
         # 
         # Express the connective as a Lucene boolean phrase.
         #
         def to_boolean_phrase #:nodoc:
-          phrase = if @components.length == 1
-            @components.first.to_boolean_phrase
-          else
-            component_phrases = @components.map do |component|
-              component.to_boolean_phrase
+          unless @components.empty?
+            phrase =
+              if @components.length == 1
+                @components.first.to_boolean_phrase
+              else
+                component_phrases = @components.map do |component|
+                  component.to_boolean_phrase
+                end
+                "(#{component_phrases.join(" #{connector} ")})"
+              end
+            if negated?
+              "-#{phrase}"
+            else
+              phrase
             end
-            "(#{component_phrases.join(" #{connector} ")})"
-          end
-          if negated?
-            "-#{phrase}"
-          else
-            phrase
           end
         end
 
         # 
-        # Add a component to the connective. All components must implement the
-        # #to_boolean_phrase method.
+        # Connectives can be negated during the process of denormalization that
+        # is performed when a disjunction contains a negated component. This
+        # method conforms to the duck type for all boolean query components.
         #
-        def add_component(component) #:nodoc:
-          @components << component
-        end
-
         def negated?
           @negated
         end
 
+        # 
+        # Returns a new connective that's a negated version of this one.
+        #
         def negate
-          negated = self.class.new(@setup, !negated?)
+          negated = self.class.new(!negated?)
           for component in @components
             negated.add_component(component)
           end
@@ -67,6 +122,9 @@ module Sunspot
           end
         end
 
+        # 
+        # Express this disjunction as a Lucene boolean phrase
+        #
         def to_boolean_phrase
           if @components.any? { |component| component.negated? }
             denormalize.to_boolean_phrase
@@ -76,16 +134,8 @@ module Sunspot
         end
 
         # 
-        # Add a conjunction to the disjunction. This overrides the method in
-        # the Scope class since scopes are implicitly conjunctive and thus
-        # can return themselves as a conjunction. Inside a disjunction, however,
-        # a conjunction must explicitly be created.
+        # No-op - this is already a disjunction
         #
-        def add_conjunction
-          @components << conjunction = Conjunction.new(setup)
-          conjunction
-        end
-
         def add_disjunction
           self
         end
@@ -96,8 +146,17 @@ module Sunspot
           'OR'
         end
 
+        # 
+        # If a disjunction contains negated components, it must be
+        # "denormalized", because the Lucene parser interprets any negated
+        # boolean phrase using AND semantics (this isn't a bug, it's just a
+        # subtlety of how Lucene parses queries). So, per DeMorgan's law we
+        # create a negated conjunction and add to it all of our components,
+        # negated themselves, which creates a query whose Lucene semantics are
+        # in line with our intentions.
+        #
         def denormalize
-          denormalized = self.class.inverse.new(@setup, !negated?)
+          denormalized = self.class.inverse.new(!negated?)
           for component in @components
             denormalized.add_component(component.negate)
           end
@@ -113,6 +172,10 @@ module Sunspot
           def inverse
             Disjunction
           end
+        end
+
+        def add_conjunction
+          self
         end
 
         private

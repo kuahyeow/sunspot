@@ -1,51 +1,24 @@
-require 'enumerator'
-
 module Sunspot
-  #
-  # The facet class encapsulates the information returned by Solr for a
-  # field facet request.
-  #
-  # See http://wiki.apache.org/solr/SolrFacetingOverview for more information
-  # on Solr's faceting capabilities.
-  #
   class Facet
-    attr_reader :field
-
-    def initialize(facet_values, field) #:nodoc:
-      @facet_values, @field = facet_values, field
+    def initialize(facet_data) #:nodoc:
+      @facet_data = facet_data
     end
 
-    # The name of the field that contains this facet's values
-    #
-    # ==== Returns
-    #
-    # Symbol:: The field name
     # 
-    def field_name
-      @field.name
+    # For field facets, this is the field name. For query facets, this is the
+    # name given to the #facet method in the DSL.
+    #
+    def name
+      @facet_data.name
     end
+    alias_method :field_name, :name
 
-    # The rows returned for this facet.
-    #
-    # ==== Returns
-    #
-    # Array:: Collection of FacetRow objects, in the order returned by Solr
     # 
+    # Collection of FacetRow objects containing the individual values returned
+    # by the facet.
+    #
     def rows
-      @rows ||=
-        begin
-          rows = []
-          @facet_values.each_slice(2) do |pair|
-            rows << new_row(pair)
-          end
-          rows
-        end
-    end
-
-    private
-
-    def new_row(pair)
-      FacetRow.new(pair, self)
+      @facet_data.rows { |value, count| FacetRow.new(value, count) }
     end
   end
 end

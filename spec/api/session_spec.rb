@@ -67,24 +67,30 @@ describe 'Session' do
 
     it 'should open connection with defaults if nothing specified' do
       Sunspot.commit
-      connection.adapter.opts[:url].should == 'http://127.0.0.1:8983/solr'
+      connection.opts[:url].should == 'http://127.0.0.1:8983/solr'
     end
 
     it 'should open a connection with custom host' do
       Sunspot.config.solr.url = 'http://127.0.0.1:8981/solr'
       Sunspot.commit
-      connection.adapter.opts[:url].should == 'http://127.0.0.1:8981/solr'
+      connection.opts[:url].should == 'http://127.0.0.1:8981/solr'
     end
 
     it 'should use Net::HTTP adapter by default' do
       Sunspot.commit
-      connection.adapter.connector.adapter_name.should == :net_http
+      connection.adapter.should == :net_http
     end
 
     it 'should use Net::HTTP adapter when specified' do
       Sunspot.config.http_client = :curb
       Sunspot.commit
-      connection.adapter.connector.adapter_name.should == :curb
+      connection.adapter.should == :curb
+    end
+
+    it 'should use LibXML builder when specified' do
+      Sunspot.config.xml_builder = :libxml
+      Sunspot.commit
+      connection.message.adapter.should be_a(RSolr::Message::Adapter::Libxml)
     end
   end
 
@@ -100,7 +106,7 @@ describe 'Session' do
         config.solr.url = 'http://127.0.0.1:8982/solr'
       end
       session.commit
-      connection.adapter.opts[:url].should == 'http://127.0.0.1:8982/solr'
+      connection.opts[:url].should == 'http://127.0.0.1:8982/solr'
     end
   end
 

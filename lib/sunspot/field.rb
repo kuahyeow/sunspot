@@ -3,12 +3,13 @@ module Sunspot
     attr_accessor :name # The public-facing name of the field
     attr_accessor :type # The Type of the field
     attr_accessor :reference # Model class that the value of this field refers to
-    attr_accessor :attributes
+    attr_reader :attributes
 
     # 
     #
-    def initialize(name, type) #:nodoc
+    def initialize(name, type, options = {}) #:nodoc
       @name, @type = name.to_sym, type
+      @stored = !!options.delete(:stored)
       @attributes = {}
     end
 
@@ -76,6 +77,15 @@ module Sunspot
     def multiple?
       !!@multiple
     end
+
+    def hash
+      indexed_name.hash
+    end
+
+    def eql?(field)
+      indexed_name == field.indexed_name
+    end
+    alias_method :==, :eql?
   end
 
   # 
@@ -87,13 +97,20 @@ module Sunspot
   # to do otherwise). FulltextField instances always have the type TextType.
   #
   class FulltextField < Field #:nodoc:
+    attr_reader :boost, :default_boost
+
     def initialize(name, options = {})
-      super(name, Type::TextType)
-      if options.has_key?(:boost)
-        @attributes[:boost] = options.delete(:boost)
-      end
+      super(name, Type::TextType, options)
       @multiple = true
+      if boost = options.delete(:boost)
+        @attributes[:boost] = boost
+      end
+      @default_boost = options.delete(:default_boost)
       raise ArgumentError, "Unknown field option #{options.keys.first.inspect} provided for field #{name.inspect}" unless options.empty?
+    end
+
+    def indexed_name
+      "#{super}#{'s' if @stored}"
     end
   end
 
@@ -106,7 +123,7 @@ module Sunspot
   #
   class AttributeField < Field #:nodoc:
     def initialize(name, type, options = {})
-      super(name, type)
+      super(name, type, options)
       @multiple = !!options.delete(:multiple)
       @reference =
         if (reference = options.delete(:references)).respond_to?(:name)
@@ -114,7 +131,6 @@ module Sunspot
         elsif reference.respond_to?(:to_sym)
           reference.to_sym
         end
-      @stored = !!options.delete(:stored)
       raise ArgumentError, "Unknown field option #{options.keys.first.inspect} provided for field #{name.inspect}" unless options.empty?
     end
 
@@ -131,27 +147,35 @@ module Sunspot
     end
   end
 
-  # 
-  # RandomField instances are used for random sorting.
-  #
-  class RandomField #:nodoc:
-    # 
-    # Never multiple, but this has to return false so Sunspot doesn't barf
-    # when you try to order by it.
-    #
-    def multiple?
-      false
+  class TypeField #:nodoc:
+    class <<self
+      def instance
+        @instance ||= new
+      end
     end
 
-    # 
-    # Solr uses the dynamic field name as a seed for random, so we randomize the
-    # field name accordingly.
-    #
-    # #XXX I think it's bad to use a random number as a seed. Would it be
-    # better to pass in the current timestamp or some such thing?
-    #
     def indexed_name
-      "random_#{rand(1<<16)}"
+      'type'
+    end
+
+    def to_indexed(clazz)
+      clazz.name
+    end
+  end
+
+  class IdField #:nodoc:
+    class <<self
+      def instance
+        @instance ||= new
+      end
+    end
+
+    def indexed_name
+      'id'
+    end
+
+    def to_indexed(id)
+      id.to_s
     end
   end
 end

@@ -11,6 +11,10 @@ module Sunspot
       #
       def to_params
         params = { :q => @keywords }
+        if @keywords.match(/\*\)?\Z/)
+          params['q.alt'] = @keywords
+          params.delete(:q)
+        end
         params[:fl] = '* score'
         params[:qf] = @fulltext_fields.values.map { |field| field.to_boosted_field }.join(' ')
         params[:defType] = 'dismax'
